@@ -3,8 +3,10 @@ from flask import Flask, render_template, url_for, redirect, request, session
 from flask_session import Session
 from tempfile import mkdtemp
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.sql import select
+from sqlalchemy.sql import select,update
 from datetime import datetime
+from werkzeug.security import check_password_hash, generate_password_hash
+
 app = Flask(__name__)
 
 key=os.urandom(24)
@@ -99,7 +101,7 @@ def index():
             cart=session.get("cart",[])
             numItems=len(cart)
 
-            return render_template("index.html", sold=sold,unsold=unsold,admin=True,numItems=numItems)
+            return render_template("index.html", sold=sold,unsold=unsold,admin=session.get("admin",False),numItems=numItems)
         elif request.form['submit_button'] == 'addItem':
             #data from form
             #returns "sold" if sold
@@ -120,19 +122,170 @@ def index():
             cart=session.get("cart",[])
             numItems=len(cart)
 
-            return render_template("index.html",sold=sold,unsold=unsold,admin=True,numItems=numItems)
+            return render_template("index.html",sold=sold,unsold=unsold,admin=session.get("admin",False),numItems=numItems)
     else:
         sold, unsold = select_items()
 
         cart=session.get("cart",[])
         numItems=len(cart)
 
-        return render_template("index.html",sold=sold,unsold=unsold,admin=True,numItems=numItems)
+        return render_template("index.html",sold=sold,unsold=unsold,admin=session.get("admin",False),numItems=numItems)
 
 @app.route("/item/<int:num>/<int:purchased>", methods=["GET", "POST"])
 def item(num,purchased): #this id is passed from the index page
-    return "temp"
+    if request.method == "POST":
+        s=select([Stock]).where(Stock.id==num)
+        data=db.session.execute(s).fetchone()
+        #add data to session
+        session.setdefault("cart",[])
+        #only append the id
+        session["cart"].append(num)
+
+        cart=session.get("cart",[])
+        numItems=len(cart)
+
+        return render_template("item.html",items=data,inCart=True,numItems=numItems,admin=session.get("admin",False))
+    else:
+        if purchased==1:
+            s=update(Stock).where(Stock.id==num).values(purchase_date=datetime.now())
+            db.session.execute(s)
+            db.session.commit()
+            cartID=session.get("cart",[])
+            if num in cartID:
+                cartID.remove(num)
+                session["cart"]=cartID
+                #prevent double purchases in cart and in checkout page
+        s=select([Stock]).where(Stock.id==num)
+        data=db.session.execute(s).fetchone()
+        inCart=False
+        cart=session.get("cart",[])
+
+        if data[0] in cart:
+            inCart=True
+
+        numItems=len(cart)
+
+        return render_template("item.html",items=data,inCart=inCart,numItems=numItems,admin=session.get("admin",False))
 
 @app.route("/checkout/<int:purchased>", methods=["GET", "POST"])
 def checkout(purchased):
-    return "temp"
+    if request.method=="POST":
+        #used for removing items from cart
+        item_id=request.form["remove_from_cart"]
+        cartID=session.get("cart",[])
+        cartID.remove(int(item_id,10))
+        session["cart"]=cartID
+
+        return redirect("/checkout/0")
+    elif request.method == "GET":
+        if purchased==1:
+            cartID=session.get("cart",[])
+            for items in cartID:
+                s=update(Stock).where(Stock.id==items).values(purchase_date=datetime.now())
+                db.session.execute(s)
+
+            db.session.commit()
+
+            session["cart"]=[]
+            cart=[]
+            total=0
+
+            return redirect("/")
+
+        else:
+            cart=[]
+            cartID=session.get("cart",[])
+            numItems=len(cartID)
+            #select all items in cart
+            for items in cartID:
+                s=select([Stock]).where(Stock.id==items)
+                cart.append(db.session.execute(s).fetchone())
+
+            total=0
+            for items in cart:
+                total+=items[7]
+            return render_template("checkout.html",numItems=numItems,cart=cart,total=total)
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    """Log user in"""
+
+    # Forget any user_id
+    session.clear()
+
+    if request.method == "POST":
+
+        password=request.form.get("password")
+        username=request.form.get("username")
+        # Ensure username was submitted
+        if not request.form.get("username"):
+          return render_template("login.html",error="No username inputted")
+        # Ensure password was submitted
+        if not request.form.get("password"):
+          return render_template("login.html",error="No password inputted")
+        # Query database for username
+        s=select([Users]).where(Users.username==username)
+        data=db.session.execute(s).fetchone()
+        #check if correct
+        if not check_password_hash(data[2], password):
+            return render_template("login.html",error="Incorrect username/password")
+
+        session["user_id"] = data[0]
+        #admin check
+        if session["user_id"] in [1]:
+            session["admin"] = True;
+        # Redirect user to home page
+        return redirect("/")
+
+    # User reached route via GET (as by clicking a link or via redirect)
+    else:
+        return render_template("login.html")
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    """Register user"""
+    session.clear()
+    #if they submit the form
+    if request.method == "POST":
+
+        password=request.form.get("password")
+        username=request.form.get("username")
+
+        # Ensure username was submitted
+        if not username or not password:
+          return render_template("register.html")
+
+        # Ensure passwords are the same
+        if request.form.get("password-confirm") != password:
+          return render_template("register.html")
+
+        #checks if the username already exists
+        #update this with the new db method
+
+        s=select([Users]).where(Users.username==username)
+        data=db.session.execute(s).fetchone()
+
+        if data:
+          return render_template("register.html")
+
+        #inserting the username and password
+        user=Users(username=request.form.get("username"),hash=generate_password_hash(request.form.get("password")))
+        db.session.add(user)
+        db.session.commit()
+
+        #getting the user id
+        s=select([Users]).where(Users.username==username)
+        data=db.session.execute(s).fetchone()
+
+        # Remember which user has logged in
+        session["user_id"] = data[0]
+        #admin check
+        #the first two accounts created are admin accounts
+        if session["user_id"] in [1]:
+          session["admin"] = True;
+
+        # Redirect user to home page
+        return redirect("/")
+
+    else:
+        return render_template("register.html")
