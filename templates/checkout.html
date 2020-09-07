@@ -9,6 +9,7 @@
 
 {% block main %}
 <script>
+/*
   paypal.Buttons({
     createOrder: function(data, actions) {
       // This function sets up the details of the transaction, including the amount and line item details.
@@ -38,6 +39,7 @@
     }
   }).render('#paypal-button-container');
   //This function displays Smart Payment Buttons on your web page.
+  */
 </script>
 
 <!--Section: Block Content-->
@@ -147,8 +149,14 @@
           <!--total up the session -->
           <!--replace with paypal-->
 
-          <div id="paypal-button-container"></div>
-
+          <!--<div id="paypal-button-container"></div>-->
+          <a href="https://paypal.me/sashco/{{ total }}"><button class="btn btn-primary mb-3 p-2 btn-block">Purchase using Paypal</button></a>
+          <div class="alert alert-danger" role="alert">
+            Remember to click "add note" on Paypal and list the names of the items purchased!
+          </div>
+          <div class="alert alert-info" role="alert">
+            We will contact you via email shortly after purchase with a tracking number.
+            </div>
         </div>
       </div>
       <!-- Card -->
