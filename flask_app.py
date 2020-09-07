@@ -76,6 +76,7 @@ def select_items(order=None):
             sold.append(items)
     return sold, unsold
 
+
 #routes
 @app.route('/', methods=["GET", "POST"])
 def index():
@@ -227,7 +228,7 @@ def login():
         s=select([Users]).where(Users.username==username)
         data=db.session.execute(s).fetchone()
         #check if correct
-        if not check_password_hash(data[2], password):
+        if data==None or not check_password_hash(data[2], password):
             return render_template("login.html",error="Incorrect username/password")
 
         session["user_id"] = data[0]
